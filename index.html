@@ -1107,8 +1107,8 @@ confirmLogout.addEventListener('click', async () => {
 
 // Open Chat
 async function openChat(friendUid, friendUniqueId) {
+    console.log("Opening chat with friend:", friendUid, friendUniqueId);
     currentChat = friendUid;
-    
     // Update UI
     defaultChat.style.display = 'none';
     chatHeader.style.display = 'flex';
@@ -1134,9 +1134,9 @@ async function openChat(friendUid, friendUniqueId) {
     loadMessages(friendUid);
 }
 
-// Load Messages
 function loadMessages(friendUid) {
     const chatId = [currentUser.uid, friendUid].sort().join('_');
+    console.log("Loading messages for chatId:", chatId);
     
     messagesListener = db.collection('chats').doc(chatId).collection('messages')
         .orderBy('timestamp', 'asc')
@@ -1148,12 +1148,14 @@ function loadMessages(friendUid) {
             });
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }, error => {
-            showToast("Error loading messages.", "error");
+            console.error("Error loading messages:", error);
+            showToast(`Failed to load messages: ${error.message}`, "error");
         });
 }
 
 // Render Message
 function renderMessage(messageId, message) {
+    console.log("Rendering message:", messageId, message);
     const div = document.createElement('div');
     div.className = `message ${message.sender === currentUser.uid ? 'sent' : 'received'} ${message.deleted ? 'deleted' : ''}`;
     div.dataset.messageId = messageId;
@@ -1162,7 +1164,6 @@ function renderMessage(messageId, message) {
         <div class="message-time">${formatTimestamp(message.timestamp)}</div>
     `;
     
-    // Add context menu for sent messages
     if (message.sender === currentUser.uid && !message.deleted) {
         div.addEventListener('contextmenu', (e) => {
             e.preventDefault();
