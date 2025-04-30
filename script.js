@@ -100,6 +100,7 @@ function setupPresence(user) {
     // Update periodically while online
     const interval = setInterval(() => {
         userRef.update({
+            isOnline: true,
             lastOnline: firebase.firestore.FieldValue.serverTimestamp()
         }).catch(error => {
             console.error('Error updating lastOnline:', error);
@@ -131,7 +132,7 @@ auth.onAuthStateChanged(async (user) => {
 
     if (user) {
         currentUser = user;
-        setupPresence(user); // Set up presence tracking
+        setupPresence(user);
         try {
             const userDoc = await db.collection('users').doc(user.uid).get();
             if (userDoc.exists && userDoc.data().uniqueId) {
@@ -223,7 +224,7 @@ setupForm.addEventListener('submit', async (e) => {
             email: currentUser.email,
             friends: [],
             isOnline: true,
-            lastOnline: firebase.firestore.FieldValue.serverTimestamp(), // Initialize lastOnline
+            lastOnline: firebase.firestore.FieldValue.serverTimestamp(),
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
@@ -464,7 +465,7 @@ async function ensureChatDocument(chatId, userUid, friendUid) {
         const chatDoc = await chatDocRef.get();
         if (!chatDoc.exists) {
             const chatData = {
-                participants: [userUid, friendUid], // Ensure participants is an array
+                participants: [userUid, friendUid],
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             };
             console.log('Creating chats document for chatId:', chatId, 'with data:', chatData);
@@ -473,10 +474,17 @@ async function ensureChatDocument(chatId, userUid, friendUid) {
         } else {
             const existingData = chatDoc.data();
             console.log('Chats document exists for chatId:', chatId, 'data:', existingData);
-            if (!existingData.participants || !existingData.participants.includes(userUid)) {
+            if (!existingData.participants || !Array.isArray(existingData.participants)) {
+                console.warn('Invalid participants field, resetting for chatId:', chatId);
+                await chatDocRef.update({
+                    participants: [userUid, friendUid],
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } else if (!existingData.participants.includes(userUid) || !existingData.participants.includes(friendUid)) {
                 console.warn('Updating participants for chatId:', chatId);
                 await chatDocRef.update({
-                    participants: firebase.firestore.FieldValue.arrayUnion(userUid, friendUid)
+                    participants: firebase.firestore.FieldValue.arrayUnion(userUid, friendUid),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
             }
         }
@@ -513,7 +521,7 @@ async function loadMessages(friendUid) {
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }, error => {
                 console.error('Error loading messages for chatId:', chatId, 'error:', error);
-                showToast(`Failed to load messages: ${error.message}. Please check your permissions.`, 'error');
+                showToast(`Failed to load messages: ${error.message}. Please check your permissions or try again.`, 'error');
             });
     } catch (error) {
         console.error('Error setting up messages listener for chatId:', chatId, 'error:', error);
@@ -569,32 +577,28 @@ async function sendMessage() {
 
     try {
         chatId = [currentUser.uid, currentChat].sort().join('_');
-        console.log('Sending message to chatId:', chatId, 'with data:', {
-            text: text,
-            sender: currentUser.uid,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-            deleted: false
-        });
-
         if (!/^[a-zA-Z0-9_-]+$/.test(chatId)) {
             throw new Error('Invalid chatId format: ' + chatId);
         }
 
-        await ensureChatDocument(chatId, currentUser.uid, currentChat);
-
-        await db.collection('chats').doc(chatId).collection('messages').add({
+        const messageData = {
             text: text,
             sender: currentUser.uid,
             timestamp: firebase.firestore.FieldValue.serverTimestamp(),
             deleted: false
-        });
+        };
+        console.log('Sending message to chatId:', chatId, 'with data:', messageData);
+
+        await ensureChatDocument(chatId, currentUser.uid, currentChat);
+
+        await db.collection('chats').doc(chatId).collection('messages').add(messageData);
 
         messageInput.value = '';
         chatMessages.scrollTop = chatMessages.scrollHeight;
         console.log('Message sent successfully to chatId:', chatId);
     } catch (error) {
         console.error('Error sending message for chatId:', chatId || 'undefined', 'error:', error);
-        showToast(`Failed to send message: ${error.message}. Please check your permissions.`, 'error');
+        showToast(`Failed to send message: ${error.message}. Please check your permissions or try again.`, 'error');
     }
 
     showSpinner(false);
@@ -630,7 +634,7 @@ deleteMessageBtn.addEventListener('click', async () => {
         showToast('Message unsent.', 'success');
     } catch (error) {
         console.error('Error unsending message:', error);
-        showToast('Error unsending message.', 'error');
+        showToast('Error unsending message: ' + error.message, 'error');
     }
 
     showSpinner(false);
@@ -652,7 +656,7 @@ menuBtn.addEventListener('click', () => {
 });
 
 backBtn.addEventListener('click', () => {
-    sidebar.classList.add('active');
+    sidebar.classList.remove('active');
 });
 
 // Send Message Event Listeners
