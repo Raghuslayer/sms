@@ -75,6 +75,20 @@ let messagesListener = null;
 function setupPresence(user) {
     const userRef = db.collection('users').doc(user.uid);
 
+    // Initialize presence fields if they don't exist
+    userRef.get().then(doc => {
+        if (doc.exists && (!doc.data().isOnline || !doc.data().lastOnline)) {
+            userRef.update({
+                isOnline: true,
+                lastOnline: firebase.firestore.FieldValue.serverTimestamp()
+            }).catch(error => {
+                console.error('Error initializing presence:', error);
+            });
+        }
+    }).catch(error => {
+        console.error('Error checking presence fields:', error);
+    });
+
     // Set online status
     userRef.update({
         isOnline: true,
@@ -209,7 +223,7 @@ setupForm.addEventListener('submit', async (e) => {
             email: currentUser.email,
             friends: [],
             isOnline: true,
-            lastOnline: firebase.firestore.FieldValue.serverTimestamp(),
+            lastOnline: firebase.firestore.FieldValue.serverTimestamp(), // Initialize lastOnline
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
 
@@ -261,10 +275,20 @@ async function loadFriends() {
                             continue;
                         }
                         const isOnline = friendData.isOnline || false;
-                        const lastOnline = friendData.lastOnline
-                            ? friendData.lastOnline.toDate().toLocaleString()
-                            : 'Unknown';
-                        const statusText = isOnline ? 'Online' : `Last online: ${lastOnline}`;
+                        let statusText;
+                        if (isOnline) {
+                            statusText = 'Online';
+                        } else {
+                            try {
+                                const lastOnline = friendData.lastOnline
+                                    ? friendData.lastOnline.toDate().toLocaleString()
+                                    : 'Never online';
+                                statusText = `Last online: ${lastOnline}`;
+                            } catch (error) {
+                                console.error(`Error formatting lastOnline for friend ${friendId}:`, error);
+                                statusText = 'Last online: Unknown';
+                            }
+                        }
                         const li = document.createElement('li');
                         li.className = 'friend-item';
                         li.dataset.uid = friendId;
@@ -430,7 +454,7 @@ async function openChat(friendUid, friendUniqueId) {
 
 // Create Chats Document
 async function ensureChatDocument(chatId, userUid, friendUid) {
-    if (!chatId || !userUid || !friendUid) {
+    if (!chatId || !userUid || !friendUid || typeof userUid !== 'string' || typeof friendUid !== 'string') {
         console.error('Invalid parameters for ensureChatDocument:', { chatId, userUid, friendUid });
         throw new Error('Invalid chat or user IDs.');
     }
@@ -439,14 +463,22 @@ async function ensureChatDocument(chatId, userUid, friendUid) {
         const chatDocRef = db.collection('chats').doc(chatId);
         const chatDoc = await chatDocRef.get();
         if (!chatDoc.exists) {
-            console.log('Creating chats document for chatId:', chatId);
-            await chatDocRef.set({
-                participants: [userUid, friendUid],
+            const chatData = {
+                participants: [userUid, friendUid], // Ensure participants is an array
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
+            };
+            console.log('Creating chats document for chatId:', chatId, 'with data:', chatData);
+            await chatDocRef.set(chatData);
             console.log('Chats document created for chatId:', chatId);
         } else {
-            console.log('Chats document exists for chatId:', chatId, 'data:', chatDoc.data());
+            const existingData = chatDoc.data();
+            console.log('Chats document exists for chatId:', chatId, 'data:', existingData);
+            if (!existingData.participants || !existingData.participants.includes(userUid)) {
+                console.warn('Updating participants for chatId:', chatId);
+                await chatDocRef.update({
+                    participants: firebase.firestore.FieldValue.arrayUnion(userUid, friendUid)
+                });
+            }
         }
     } catch (error) {
         console.error('Error ensuring chats document for chatId:', chatId, 'error:', error);
@@ -481,11 +513,11 @@ async function loadMessages(friendUid) {
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }, error => {
                 console.error('Error loading messages for chatId:', chatId, 'error:', error);
-                showToast(`Failed to load messages: ${error.message}`, 'error');
+                showToast(`Failed to load messages: ${error.message}. Please check your permissions.`, 'error');
             });
     } catch (error) {
         console.error('Error setting up messages listener for chatId:', chatId, 'error:', error);
-        showToast(`Failed to load messages: ${error.message}`, 'error');
+        showToast(`Failed to load messages: ${error.message}. Please try again later.`, 'error');
     }
 }
 
@@ -562,7 +594,7 @@ async function sendMessage() {
         console.log('Message sent successfully to chatId:', chatId);
     } catch (error) {
         console.error('Error sending message for chatId:', chatId || 'undefined', 'error:', error);
-        showToast(`Failed to send message: ${error.message}`, 'error');
+        showToast(`Failed to send message: ${error.message}. Please check your permissions.`, 'error');
     }
 
     showSpinner(false);
