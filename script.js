@@ -75,7 +75,7 @@ let messagesListener = null;
 function setupPresence(user) {
     const userRef = db.collection('users').doc(user.uid);
 
-    // Initialize presence fields if they don't exist
+    // Initialize presence fields
     userRef.get().then(doc => {
         if (doc.exists && (!doc.data().isOnline || !doc.data().lastOnline)) {
             userRef.update({
@@ -97,7 +97,7 @@ function setupPresence(user) {
         console.error('Error setting online status:', error);
     });
 
-    // Update periodically while online
+    // Update periodically
     const interval = setInterval(() => {
         userRef.update({
             isOnline: true,
@@ -105,9 +105,9 @@ function setupPresence(user) {
         }).catch(error => {
             console.error('Error updating lastOnline:', error);
         });
-    }, 30000); // Update every 30 seconds
+    }, 30000);
 
-    // Set offline on page unload
+    // Set offline on unload
     window.addEventListener('beforeunload', () => {
         userRef.update({
             isOnline: false,
@@ -476,10 +476,11 @@ async function ensureChatDocument(chatId, userUid, friendUid) {
             console.log('Chats document exists for chatId:', chatId, 'data:', existingData);
             if (!existingData.participants || !Array.isArray(existingData.participants)) {
                 console.warn('Invalid participants field, resetting for chatId:', chatId);
-                await chatDocRef.update({
+                await chatDocRef.set({
                     participants: [userUid, friendUid],
+                    createdAt: existingData.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                }, { merge: true });
             } else if (!existingData.participants.includes(userUid) || !existingData.participants.includes(friendUid)) {
                 console.warn('Updating participants for chatId:', chatId);
                 await chatDocRef.update({
@@ -521,7 +522,7 @@ async function loadMessages(friendUid) {
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }, error => {
                 console.error('Error loading messages for chatId:', chatId, 'error:', error);
-                showToast(`Failed to load messages: ${error.message}. Please check your permissions or try again.`, 'error');
+                showToast(`Failed to load messages: ${error.message}. Please try again later.`, 'error');
             });
     } catch (error) {
         console.error('Error setting up messages listener for chatId:', chatId, 'error:', error);
@@ -598,7 +599,7 @@ async function sendMessage() {
         console.log('Message sent successfully to chatId:', chatId);
     } catch (error) {
         console.error('Error sending message for chatId:', chatId || 'undefined', 'error:', error);
-        showToast(`Failed to send message: ${error.message}. Please check your permissions or try again.`, 'error');
+        showToast(`Failed to send message: ${error.message}. Please try again later.`, 'error');
     }
 
     showSpinner(false);
