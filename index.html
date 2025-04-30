@@ -958,6 +958,11 @@ setupForm.addEventListener('submit', async (e) => {
 async function loadFriends() {
     try {
         const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        if (!userDoc.exists) {
+            showToast("User profile not found.", "error");
+            return;
+        }
+        
         const friends = userDoc.data().friends || [];
         
         friendsList.innerHTML = '';
@@ -969,21 +974,27 @@ async function loadFriends() {
             friendsList.style.display = 'block';
             
             for (const friendId of friends) {
-                const friendDoc = await db.collection('users').doc(friendId).get();
-                if (friendDoc.exists) {
-                    const friendData = friendDoc.data();
-                    const li = document.createElement('li');
-                    li.className = 'friend-item';
-                    li.dataset.uid = friendId;
-                    li.innerHTML = `
-                        <div class="friend-avatar">${friendData.uniqueId[0].toUpperCase()}</div>
-                        <div class="friend-info">
-                            <div class="friend-name">${friendData.uniqueId}</div>
-                            <div class="friend-status">Online</div>
-                        </div>
-                    `;
-                    li.addEventListener('click', () => openChat(friendId, friendData.uniqueId));
-                    friendsList.appendChild(li);
+                try {
+                    const friendDoc = await db.collection('users').doc(friendId).get();
+                    if (friendDoc.exists) {
+                        const friendData = friendDoc.data();
+                        const li = document.createElement('li');
+                        li.className = 'friend-item';
+                        li.dataset.uid = friendId;
+                        li.innerHTML = `
+                            <div class="friend-avatar">${friendData.uniqueId[0].toUpperCase()}</div>
+                            <div class="friend-info">
+                                <div class="friend-name">${friendData.uniqueId}</div>
+                                <div class="friend-status">Online</div>
+                            </div>
+                        `;
+                        li.addEventListener('click', () => openChat(friendId, friendData.uniqueId));
+                        friendsList.appendChild(li);
+                    } else {
+                        console.warn(`Friend document not found for UID: ${friendId}`);
+                    }
+                } catch (error) {
+                    console.error(`Error loading friend ${friendId}:`, error);
                 }
             }
         }
@@ -992,7 +1003,6 @@ async function loadFriends() {
         showToast("Failed to load friends.", "error");
     }
 }
-
 // Open Add Friend Modal
 addFriendBtn.addEventListener('click', () => {
     addFriendModal.style.display = 'flex';
@@ -1034,6 +1044,13 @@ addFriendForm.addEventListener('submit', async (e) => {
         
         // Check if already friends
         const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        if (!userDoc.exists) {
+            addFriendError.textContent = "User profile not found.";
+            addFriendError.style.display = 'block';
+            showSpinner(false);
+            return;
+        }
+        
         const friends = userDoc.data().friends || [];
         if (friends.includes(friendUid)) {
             addFriendError.textContent = "This user is already your friend.";
@@ -1051,7 +1068,8 @@ addFriendForm.addEventListener('submit', async (e) => {
         addFriendModal.style.display = 'none';
         loadFriends();
     } catch (error) {
-        addFriendError.textContent = error.message;
+        console.error("Error adding friend:", error);
+        addFriendError.textContent = error.message || "Failed to add friend.";
         addFriendError.style.display = 'block';
     }
     
